@@ -1,6 +1,8 @@
+use dotenv;
 use futures::future;
 use futures::{stream, FutureExt, Stream, StreamExt, TryStreamExt};
-use snafu::{Backtrace, ResultExt, Snafu};
+use snafu::{Backtrace, NoneError, ResultExt, Snafu};
+use std::env;
 use std::io;
 use tokio::net::TcpStream;
 use tokio_postgres::tls::{NoTls, NoTlsStream};
@@ -19,6 +21,10 @@ pub enum Error {
         backtrace: Backtrace,
     },
 
+    #[snafu(display("Env Variable Error: {}", detail))]
+    #[snafu(visibility(pub))]
+    EnvError { detail: String },
+
     #[snafu(display("DB Connection Error: {}", source))]
     #[snafu(visibility(pub))]
     DBError {
@@ -29,16 +35,50 @@ pub enum Error {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let connstr = String::from("postgresql://user:pwd@postgres/journal");
+    // Read the file ./postgres/database.env to extract user, password, and database name
+    let dbenv = env::current_dir()
+        .and_then(|d| Ok(d.join("postgres").join("database.env")))
+        .context(IOError)?;
+    dotenv::from_path(dbenv.as_path())
+        .or(Err(NoneError))
+        .context(EnvError {
+            detail: String::from("database env"),
+        })?;
+
+    // Build the connection string
+    let connstr = format!(
+        "postgresql://{user}:{pwd}@localhost/{db}",
+        user = dotenv::var("POSTGRES_USER")
+            .or(Err(NoneError))
+            .context(EnvError {
+                detail: String::from("POSTGRES_USER")
+            })?,
+        pwd = dotenv::var("POSTGRES_PASSWORD")
+            .or(Err(NoneError))
+            .context(EnvError {
+                detail: String::from("POSTGRES_PASSWORD")
+            })?,
+        db = dotenv::var("POSTGRES_DB")
+            .or(Err(NoneError))
+            .context(EnvError {
+                detail: String::from("POSTGRES_DB")
+            })?,
+    );
+
     let mut stream = get_stream(&connstr).await?;
 
-    while let Ok(n) = stream.try_next().await {
-        if let Some(msg) = n {
-            println!("Received notification: {}", msg);
+    loop {
+        match stream.try_next().await {
+            Ok(n) => {
+                if let Some(msg) = n {
+                    println!("Received notification: {}", msg);
+                }
+            }
+            Err(err) => {
+                println!("Received error: {}", err);
+            }
         }
     }
-
-    Ok(())
 }
 
 async fn get_stream(
@@ -53,7 +93,7 @@ async fn get_stream(
     println!("Spawned dedicated connection for postgres notifications");
 
     client
-        .batch_execute("LISTEN documents;")
+        .batch_execute("LISTEN ticker;")
         .await
         .context(DBError)?;
 
@@ -71,6 +111,9 @@ async fn get_stream(
 
 async fn connect_raw(s: &str) -> Result<(Client, Connection<TcpStream, NoTlsStream>), Error> {
     let config = s.parse::<Config>().context(DBError)?;
+    // Here we extract the host and port from the connection string.
+    // Note that the port may not necessarily be explicitely specified,
+    // the port 5432 is used by default.
     let host = config
         .get_hosts()
         .first()

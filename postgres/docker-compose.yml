@@ -1,0 +1,9 @@
+# docker-compose.yml
+version: '3'
+services:
+  db:
+    image: "postgres" # use latest official postgres version
+    env_file:
+      - database.env
+    ports:
+      - "5432:5432"
