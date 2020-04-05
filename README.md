@@ -3,8 +3,8 @@
 This project builds a tiny database, with a trigger on update, which sends notifications on
 a channel.
 
-We expect that if one hand we update the rows in the table, we would receive notifications if
-we listen to the specified channel.
+We expect that if on one hand we update the rows in the table, then on the other we would receive
+notifications if we listen to the specified channel.
 
 ## Setup
 
@@ -51,7 +51,7 @@ get the update:
 
 ```
 Asynchronous notification "ticker" with payload "{"operation" : "UPDATE", "record" :
-  {"id":"AAA","price":2,"updated_at":"2020-04-05T18:40:22.109379+00:00"}}"
+  {"id":"AAA","price":3.14,"updated_at":"2020-04-05T18:40:22.109379+00:00"}}"
   received from server process with PID 74
 ```
 
