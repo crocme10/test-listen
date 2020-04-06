@@ -65,7 +65,9 @@ async fn main() -> Result<(), Error> {
             })?,
     );
 
-    let mut stream = get_stream(&connstr).await?;
+    let (client, connection) = connect_raw(&connstr).await?;
+
+    let mut stream = get_stream(&client, connection).await?;
 
     loop {
         match stream.try_next().await {
@@ -79,13 +81,14 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+
+    // Ok(())
 }
 
 async fn get_stream(
-    connstr: &str,
+    client: &Client,
+    mut connection: Connection<TcpStream, NoTlsStream>,
 ) -> Result<impl Stream<Item = Result<String, Error>> + Send + 'static, Error> {
-    let (client, mut connection) = connect_raw(connstr).await?;
-
     let (tx, rx) = futures::channel::mpsc::unbounded();
     let stream = stream::poll_fn(move |cx| connection.poll_message(cx)).map_err(|e| panic!(e));
     let connection = stream.forward(tx).map(|r| r.expect("stream forward"));
